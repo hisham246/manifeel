@@ -1,0 +1,6 @@
+.git
+data/
+manifeel.egg-info/
+**/__pycache__/
+*.sif
+wrist_camera_check*.png
