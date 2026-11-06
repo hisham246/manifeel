@@ -47,6 +47,13 @@ class UsbInsertionEnv(AssemblyEnv):
         # state = np.concatenate([ee_pos, ee_quat], axis=1), shape (num_envs, 7)
         obs["state"] = torch.cat([self.fingertip_midpoint_pos, self.fingertip_midpoint_quat], dim=-1)
 
+        # Per-finger net contact force against the held USB plug, shape (num_envs, 6) =
+        # concat(left_finger_force_xyz, right_finger_force_xyz). num_sensors=1 per sensor
+        # (single prim_path match), so .squeeze(1) drops that axis.
+        left_force = self.scene["left_finger_contact"].data.net_normal_forces_w.torch.squeeze(1)
+        right_force = self.scene["right_finger_contact"].data.net_normal_forces_w.torch.squeeze(1)
+        obs["contact_force"] = torch.cat([left_force, right_force], dim=-1)
+
         return obs
 
     # ------------------------------------------------------------------

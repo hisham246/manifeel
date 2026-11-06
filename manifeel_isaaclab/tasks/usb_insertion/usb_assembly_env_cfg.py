@@ -18,7 +18,7 @@ yet -- flagged for milestone 7 (standalone smoke test with an actual rendered fr
 import math
 
 import isaaclab.sim as sim_utils
-from isaaclab.sensors import CameraCfg
+from isaaclab.sensors import CameraCfg, ContactSensorCfg
 from isaaclab.utils import configclass
 
 from isaaclab_tasks.contrib.automate.assembly_env_cfg import AssemblyEnvCfg, AssemblySceneCfg, CtrlCfg
@@ -55,6 +55,29 @@ class UsbAssemblySceneCfg(AssemblySceneCfg):
             clipping_range=(0.01, 10.0),
         ),
     )
+
+    # Per-finger grasp/insertion contact force, filtered against the held USB plug so
+    # net_normal_forces_w / normal_force_matrix_w isolate plug contact from table/socket
+    # contact. filter_prim_paths_expr requires prim_path to match exactly one body per
+    # env, so this is two sensors (one per finger) rather than a single wildcard sensor.
+    left_finger_contact: ContactSensorCfg = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/panda_leftfinger",
+        update_period=0.0,
+        history_length=1,
+        filter_prim_paths_expr=["{ENV_REGEX_NS}/HeldAsset/Geometry/USB_plug/manifeel_usb_plug"],
+    )
+    right_finger_contact: ContactSensorCfg = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/panda_rightfinger",
+        update_period=0.0,
+        history_length=1,
+        filter_prim_paths_expr=["{ENV_REGEX_NS}/HeldAsset/Geometry/USB_plug/manifeel_usb_plug"],
+    )
+
+    def __post_init__(self):
+        super().__post_init__()
+        # AssemblySceneCfg's franka_mimic.usd spawn has this off; PhysX only reports
+        # contacts for bodies on an articulation spawned with it enabled.
+        self.robot.spawn.activate_contact_sensors = True
 
 
 @configclass
