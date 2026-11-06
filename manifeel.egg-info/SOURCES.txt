@@ -1,0 +1,8 @@
+LICENSE
+README.md
+setup.py
+manifeel.egg-info/PKG-INFO
+manifeel.egg-info/SOURCES.txt
+manifeel.egg-info/dependency_links.txt
+manifeel.egg-info/top_level.txt
+test/test_env.py
