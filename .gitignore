@@ -2,3 +2,4 @@ manifeel.sif
 data/
 assets/
 **/__pycache__/
+.vscode
