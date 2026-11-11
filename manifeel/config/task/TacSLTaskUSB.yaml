@@ -36,6 +36,9 @@ env:
                'tactile_force_field_right': [ 10, 14, 3 ],
                'tactile_depth_left': [ 10, 14 ], 
                'tactile_depth_right': [ 10, 14 ],
+               'plug_socket_force': [ 3 ],
+               'plug_left_elastomer_force': [ 3 ],
+               'plug_right_elastomer_force': [ 3 ],
                'client': [ 256, 256, 3 ],
     }
     stateDims: { }
@@ -180,7 +183,7 @@ rl:
     clamp_rot: True
     clamp_rot_thresh: 1.0e-6
 
-    add_contact_force_plug_decomposed: False  # add observation of plug force decomposed into contact with lfinger, rfinger, socket
+    add_contact_force_plug_decomposed: True  # add observation of plug force decomposed into contact with lfinger, rfinger, socket
 
     insertion_frac: 1  # what fraction of contact interaction to perform? 0: no insertion, 1: full insertion
 
