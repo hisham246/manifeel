@@ -1,0 +1,24 @@
+services:
+  manifeel:
+    build: .
+    image: manifeel:isaacgym
+    container_name: manifeel
+    runtime: nvidia
+    network_mode: host
+    ipc: host
+    shm_size: 16g
+    stdin_open: true
+    tty: true
+    environment:
+      - DISPLAY=${DISPLAY}
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVIDIA_VISIBLE_DEVICES=all
+      - __NV_PRIME_RENDER_OFFLOAD=1
+      - __GLX_VENDOR_LIBRARY_NAME=nvidia
+      - WANDB_API_KEY=${WANDB_API_KEY:-}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ..:/workspace          # whole ~/uwaterloo, so the sibling repos resolve
+      - torch_cache:/root/.cache
+volumes:
+  torch_cache:
