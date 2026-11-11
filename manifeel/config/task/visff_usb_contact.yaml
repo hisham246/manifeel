@@ -1,0 +1,49 @@
+name: vision_tacff_usb_contact
+
+# Task shape_meta for the regenerated usb_quan_Aug05_contact_manifeel dataset, which adds
+# real PhysX pairwise contact forces (plug_left/right_elastomer_force, plug_socket_force)
+# alongside the original TacSL tactile_force_field_right signal -- see manifeel/policy/
+# maniflow_usb_policy.py for the policy this is meant to be paired with.
+#
+# plug_right_elastomer_force is included here since it's the real-force counterpart to
+# tactile_force_field_right (both describe plug<->right-finger contact); plug_left_elastomer_force
+# and plug_socket_force also exist in the dataset if you want to add them later.
+
+image_shape: &image_shape [3, 256, 256]
+shape_meta: &shape_meta
+  # acceptable types: rgb, low_dim
+  obs:
+    front:
+      shape: *image_shape
+      type: rgb
+    tactile_force_field_right:
+      # low_dim, not rgb: maniflow.model.vision_2d.timm_obs_encoder.TimmObsEncoder
+      # asserts all rgb-type keys share the same (H,W), which breaks the moment you mix
+      # a real [3,256,256] camera image with a [3,10,14] tactile grid under type: rgb.
+      # low_dim just flattens the tensor as-is (10*14*3 values), no such restriction --
+      # shape here matches the zarr array's native channel-last layout, (10,14,3).
+      shape: [10, 14, 3]
+      type: low_dim
+    state:
+      shape: [7]
+      type: low_dim
+    plug_right_elastomer_force:
+      shape: [3]
+      type: low_dim
+  action:
+    shape: [6]
+
+# No env_runner wired up yet -- there is no ManiFlow-compatible rollout runner for this
+# task. manifeel/workspace/train_maniflow_usb_workspace.py skips rollout eval entirely
+# rather than assuming one works.
+
+dataset:
+  _target_: manifeel.dataset.manifeel_dataset_equidp.ManifeelDataset
+  shape_meta: ${shape_meta}
+  zarr_path: ${dataset_path}
+  horizon: ${horizon}
+  pad_before: ${eval:'${n_obs_steps}-1'}
+  pad_after: ${eval:'${n_action_steps}-1'}
+  seed: 42
+  val_ratio: 0.02
+  max_train_episodes: 40

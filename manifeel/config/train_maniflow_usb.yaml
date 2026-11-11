@@ -1,0 +1,152 @@
+defaults:
+  - _self_
+  - task: visff_usb_contact
+
+name: maniflow_usb
+_target_: manifeel.workspace.train_maniflow_usb_workspace.TrainManiFlowUsbWorkspace
+
+task_name: ${task.name}
+shape_meta: ${task.shape_meta}
+exp_name: "default"
+
+dataset_path: data/usb_quan_Aug05_contact_manifeel
+isaacgym_cfg_name: "isaacgym_config_usb.yaml"
+
+n_demo: ${task.dataset.max_train_episodes}
+horizon: 16
+n_obs_steps: 2
+n_action_steps: 8
+n_latency_steps: 0
+dataset_obs_steps: ${n_obs_steps}
+obs_as_global_cond: True
+
+policy:
+  # manifeel's wrapper subclass (currently a pass-through) rather than importing
+  # maniflow.policy.maniflow_image_policy.ManiFlowTransformerImagePolicy directly --
+  # see manifeel/policy/maniflow_usb_policy.py for why.
+  _target_: manifeel.policy.maniflow_usb_policy.ManiFlowUsbPolicy
+
+  shape_meta: ${shape_meta}
+
+  block_type: "DiTX"
+  n_layer: 6      # robotwin reference uses 12; smaller here as a starting point
+  n_head: 8
+  n_emb: 384      # robotwin reference uses 768; smaller here as a starting point
+  visual_cond_len: 1024
+  qkv_bias: true
+  qk_norm: true
+
+  language_conditioned: false
+
+  flow_batch_ratio: 0.75
+  consistency_batch_ratio: 0.25
+  sample_t_mode_flow: "beta"
+  sample_t_mode_consistency: "discrete"
+  sample_dt_mode_consistency: "uniform"
+  sample_target_t_mode: "relative"
+  denoise_timesteps: 10
+
+  diffusion_timestep_embed_dim: 128
+  diffusion_target_t_embed_dim: 128
+
+  horizon: ${horizon}
+  n_action_steps: ${eval:'${n_action_steps}+${n_latency_steps}'}
+  n_obs_steps: ${n_obs_steps}
+  num_inference_steps: 10
+  obs_as_global_cond: ${obs_as_global_cond}
+
+  obs_encoder:
+    _target_: maniflow.model.vision_2d.timm_obs_encoder.TimmObsEncoder
+    shape_meta: ${shape_meta}
+
+    model_name: 'resnet18.a1_in1k'
+    pretrained: True
+    frozen: False
+
+    global_pool: ''
+    feature_aggregation: null
+    position_encording: 'sinusoidal'
+    downsample_ratio: 32
+
+    transforms: null
+
+    use_group_norm: True
+    share_rgb_model: False
+    imagenet_norm: True
+
+ema:
+  _target_: maniflow.model.diffusion.ema_model.EMAModel
+  update_after_step: 0
+  inv_gamma: 1.0
+  power: 0.75
+  min_value: 0.0
+  max_value: 0.9999
+
+dataloader:
+  batch_size: 8
+  num_workers: 3
+  shuffle: True
+  pin_memory: True
+  persistent_workers: False
+
+val_dataloader:
+  batch_size: 8
+  num_workers: 1
+  shuffle: False
+  pin_memory: True
+  persistent_workers: False
+
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 1.0e-4
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  weight_decay: 1.0e-3
+
+training:
+  device: "cuda:0"
+  seed: 42
+  debug: False
+  resume: True
+  lr_scheduler: cosine
+  lr_warmup_steps: 500
+  num_epochs: ${eval:'int(50000 / ${n_demo})'}
+  gradient_accumulate_every: 1
+  use_ema: True
+  checkpoint_every: 10
+  val_every: 10
+  sample_every: 10
+  max_train_steps: null
+  max_val_steps: null
+  tqdm_interval_sec: 1.0
+
+logging:
+  project: maniflow_usb_debug
+  resume: True
+  mode: online
+  name: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}
+  tags: ["${name}", "${task_name}", "${exp_name}"]
+  id: null
+  group: null
+
+checkpoint:
+  topk:
+    monitor_key: train_loss
+    mode: min
+    k: 5
+    format_str: 'epoch={epoch:04d}-train_loss={train_loss:.3f}.ckpt'
+  save_last_ckpt: True
+  save_last_snapshot: False
+
+multi_run:
+  run_dir: data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
+  wandb_name_base: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}
+
+hydra:
+  job:
+    override_dirname: ${name}
+  run:
+    dir: data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
+  sweep:
+    dir: data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
+    subdir: ${hydra.job.num}
