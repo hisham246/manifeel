@@ -15,6 +15,21 @@
 ARG BASE_IMAGE=isaac-lab-base:latest
 FROM ${BASE_IMAGE}
 
+# isaacsim.pip.nv's pip_prebundle/ is supposed to vendor nvidia-cuda-nvrtc (used by the
+# RTX renderer's shader JIT compiler) but the directory is simply absent -- confirmed
+# missing even in the clean isaac-lab-base:latest layer, so this is an upstream Isaac
+# Sim 6.1.0 packaging gap, not something manifeel broke. Every run logs "Could not load
+# libnvrtc-builtins.so" as a result; suspected cause of the interactive viewport being
+# unusably slow during continuous rendering (a single post-reset frame hid it, but
+# sustained motion didn't) -- not yet confirmed fixed, just the most likely remaining
+# culprit after ruling out GPU clock throttling and render mode.
+RUN mkdir -p /isaac-sim/exts/isaacsim.pip.nv/pip_prebundle/nvidia/cuda_nvrtc/lib && \
+    /opt/isaaclab-venv/bin/python3 -m pip install nvidia-cuda-nvrtc-cu12==12.8.61 \
+        --no-deps --target=/tmp/nvrtc-fix && \
+    cp /tmp/nvrtc-fix/nvidia/cuda_nvrtc/lib/*.so* \
+        /isaac-sim/exts/isaacsim.pip.nv/pip_prebundle/nvidia/cuda_nvrtc/lib/ && \
+    rm -rf /tmp/nvrtc-fix
+
 # The venv is world-writable (the base image chmods it a+rwX), so install as the
 # isaaclab runtime user directly instead of root -- new files land correctly owned
 # from the start, which avoids a chown -R over the whole ~259-package venv
