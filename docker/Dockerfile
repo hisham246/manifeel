@@ -61,6 +61,20 @@ COPY --chown=isaaclab:isaaclab --from=maniflow . /workspace/maniflow/
 RUN --mount=type=cache,target=/tmp/uv-cache,uid=1000,gid=1000 \
     uv pip install --no-deps -e /workspace/manifeel -e /workspace/diffusion_policy -e /workspace/maniflow
 
+# None of manifeel/, diffusion_policy/, or maniflow/ have __init__.py anywhere in their
+# package directories, so setuptools' find_packages() (what all three setup.py files
+# use) can't discover anything -- the editable installs above silently install EMPTY
+# packages in all three cases (confirmed: each one's generated finder has an empty
+# MAPPING dict). This went unnoticed until train.py's plain `import diffusion_policy`
+# hit it directly -- every earlier throwaway script worked around it (unknowingly) by
+# manually sys.path.insert()-ing instead of relying on the pip install actually working.
+# Python 3's implicit namespace packages make all three importable anyway, with nothing
+# more than each repo's root directory on PYTHONPATH (confirmed per-package on a CPU-only
+# probe, no GPU needed) -- not a Docker-specific fix, just working around a gap in all
+# three repos without touching their files. manifeel_isaaclab comes along for free here
+# too: it's a sibling top-level directory under the same manifeel/ repo root.
+ENV PYTHONPATH=/workspace/maniflow:/workspace/diffusion_policy:/workspace/manifeel:${PYTHONPATH}
+
 ENV OMNI_KIT_ACCEPT_EULA=YES
 ENV ACCEPT_EULA=Y
 
