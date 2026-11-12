@@ -1,0 +1,46 @@
+name: vision_tacff_usb
+
+# Matches the manifeel diffusion_policy baseline's observation set exactly (see
+# manifeel/config/task/visff_front.yaml): front image + tactile_force_field_right +
+# state. No plug_left/right_elastomer_force or plug_socket_force here on purpose --
+# those real contact-force fields exist in usb_quan_Aug05_contact_manifeel (added this
+# session) but are reserved for a separate method later, not this baseline-comparable
+# ManiFlow run. See visff_usb_contact.yaml for the variant that includes them.
+#
+# tactile_force_field_right is rgb (shape [3,10,14], channel-first, matching the
+# baseline's own convention) and gets encoded through its own from-scratch ResNet-18 --
+# see manifeel/policy/maniflow_usb_policy.py's obs_encoder config
+# (manifeel.model.dual_resnet_obs_encoder.DualResNetObsEncoder), which builds one
+# TimmObsEncoder PER rgb key specifically so this and front's [3,256,256] can coexist --
+# a single shared TimmObsEncoder instance over both would crash (it asserts every rgb
+# key shares the same (H,W)).
+
+image_shape: &image_shape [3, 256, 256]
+shape_meta: &shape_meta
+  # acceptable types: rgb, low_dim
+  obs:
+    front:
+      shape: *image_shape
+      type: rgb
+    tactile_force_field_right:
+      shape: [3, 10, 14]
+      type: rgb
+    state:
+      shape: [7]
+      type: low_dim
+  action:
+    shape: [6]
+
+# No env_runner wired up yet -- see manifeel/workspace/train_maniflow_usb_workspace.py's
+# TODO; rollout eval is skipped entirely rather than assumed to work.
+
+dataset:
+  _target_: manifeel.dataset.manifeel_dataset_equidp.ManifeelDataset
+  shape_meta: ${shape_meta}
+  zarr_path: ${dataset_path}
+  horizon: ${horizon}
+  pad_before: ${eval:'${n_obs_steps}-1'}
+  pad_after: ${eval:'${n_action_steps}-1'}
+  seed: 42
+  val_ratio: 0.02
+  max_train_episodes: 40

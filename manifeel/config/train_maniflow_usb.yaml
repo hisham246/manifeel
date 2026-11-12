@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - task: visff_usb_contact
+  - task: visff_usb
 
 name: maniflow_usb
 _target_: manifeel.workspace.train_maniflow_usb_workspace.TrainManiFlowUsbWorkspace
@@ -56,23 +56,46 @@ policy:
   obs_as_global_cond: ${obs_as_global_cond}
 
   obs_encoder:
-    _target_: maniflow.model.vision_2d.timm_obs_encoder.TimmObsEncoder
+    # Builds one TimmObsEncoder per rgb key (front, tactile_force_field_right) rather
+    # than one shared instance -- see manifeel/model/dual_resnet_obs_encoder.py.
+    # Matches the ManiFlow paper's described 2D encoder ("we train a ResNet-18 encoder
+    # from scratch... adaptive visual features... fed into DiT-X"), applied to TacFF
+    # too per the ManiFeel paper's choice to encode it inside a vision encoder.
+    _target_: manifeel.model.dual_resnet_obs_encoder.DualResNetObsEncoder
     shape_meta: ${shape_meta}
+    n_obs_steps: ${n_obs_steps}
 
-    model_name: 'resnet18.a1_in1k'
-    pretrained: True
+    model_name: 'resnet18'
+    pretrained: False
     frozen: False
 
-    global_pool: ''
-    feature_aggregation: null
-    position_encording: 'sinusoidal'
+    # NOT null: aggregate_feature() with feature_aggregation=None returns an unpooled
+    # 3D tensor for plain resnet18 (only 'r3m' skips that path), which the very next
+    # line in forward() asserts must be 2D -- confirmed crashes on a CPU probe. 'avg'
+    # pools it first, same effect as a standard resnet's own AdaptiveAvgPool2d.
+    feature_aggregation: 'avg'
     downsample_ratio: 32
 
-    transforms: null
+    # Paper's described augmentations (random crop ratio 0.95, rotation +/-5deg, color
+    # jitter) -- front only. Color jitter operates on real photometric RGB values; it's
+    # physically meaningless on tactile_force_field_right's normal/shear force channels,
+    # so that key gets no augmentation (not in this dict -> transforms=None for it).
+    transforms_by_key:
+      front:
+        - type: RandomCrop
+          ratio: 0.95
+        - _target_: torchvision.transforms.RandomRotation
+          degrees: [-5.0, 5.0]
+          expand: false
+        - _target_: torchvision.transforms.ColorJitter
+          brightness: 0.3
+          contrast: 0.4
+          saturation: 0.5
+          hue: 0.08
 
     use_group_norm: True
-    share_rgb_model: False
-    imagenet_norm: True
+    # Not pretrained (see above), so ImageNet normalization stats don't apply here.
+    imagenet_norm: False
 
 ema:
   _target_: maniflow.model.diffusion.ema_model.EMAModel
