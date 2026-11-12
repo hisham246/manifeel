@@ -111,6 +111,12 @@ dataloader:
   shuffle: True
   pin_memory: True
   persistent_workers: False
+  # Without this, the trailing batch of every epoch can be smaller than batch_size
+  # (whatever len(dataset) % batch_size leaves over) -- that undersized batch is what
+  # triggered the recurring "degrees of freedom <= 0" warning from timm's fast_norm and,
+  # eventually, a permanently-NaN run. Val dataloader below keeps drop_last off (default)
+  # since no backward/step happens there -- no reason to throw away validation samples.
+  drop_last: True
 
 val_dataloader:
   batch_size: 8
@@ -135,6 +141,7 @@ training:
   lr_warmup_steps: 500
   num_epochs: ${eval:'int(50000 / ${n_demo})'}
   gradient_accumulate_every: 1
+  grad_clip_norm: 1.0
   use_ema: True
   checkpoint_every: 10
   val_every: 10

@@ -156,10 +156,32 @@ class TrainManiFlowUsbWorkspace(BaseWorkspace):
                             train_sampling_batch = batch
 
                         raw_loss, loss_dict = self.model.compute_loss(batch, self.ema_model)
+
+                        if not torch.isfinite(raw_loss):
+                            # Seen in practice on this dataset: an isolated NaN loss on
+                            # one batch doesn't just hurt that step -- AdamW's exp_avg/
+                            # exp_avg_sq buffers are permanent state, so a single NaN
+                            # gradient poisons them forever (nan * decay + ... == nan),
+                            # silently ending the run many epochs later once enough
+                            # parameters are touched. drop_last=True on the train
+                            # dataloader (see train_maniflow_usb.yaml) should prevent
+                            # the undersized-trailing-batch case that triggered this,
+                            # but skip defensively rather than ever step on a bad batch.
+                            print(f"[warn] non-finite loss ({raw_loss.item()}) at "
+                                  f"global_step={self.global_step}, epoch={self.epoch}, "
+                                  f"batch_idx={batch_idx} -- skipping this batch")
+                            self.optimizer.zero_grad()
+                            continue
+
                         loss = raw_loss / cfg.training.gradient_accumulate_every
                         loss.backward()
 
                         if self.global_step % cfg.training.gradient_accumulate_every == 0:
+                            # No reference implementation of a DiT/flow-matching backbone
+                            # skips this -- omitting it is what let one bad batch's
+                            # gradient spike snowball into a permanently NaN model here.
+                            torch.nn.utils.clip_grad_norm_(
+                                self.model.parameters(), max_norm=cfg.training.grad_clip_norm)
                             self.optimizer.step()
                             self.optimizer.zero_grad()
                             lr_scheduler.step()
