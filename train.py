@@ -10,7 +10,17 @@ $ python train.py \
 
 """
 
-import isaacgym
+# isaacgym must be imported before torch if it's going to be used at all (internal
+# symbol-loading order requirement) -- but it can't even be imported on Blackwell/RTX
+# 50-series GPUs (no compiled kernels for sm_120, since IsaacGym predates that
+# architecture by ~3 years), so this can't be unconditional anymore. Workspaces that
+# still route through the old IsaacGym env wrapper need to run on hardware where this
+# import actually succeeds; ones that don't (e.g. ManiFlow training, pure offline from
+# a saved dataset) work fine either way.
+try:
+    import isaacgym  # noqa: F401
+except ImportError:
+    pass
 
 
 import os

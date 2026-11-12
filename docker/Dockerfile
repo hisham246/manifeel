@@ -4,12 +4,13 @@
 # SDK installed into a uv-managed venv at $VIRTUAL_ENV, with torch==2.12.0+cu130
 # (verified sm_120/Blackwell-compatible on the RTX 5090).
 #
-# Build context is manifeel/ itself; diffusion_policy/ (a separate sibling checkout,
-# not part of this repo) is passed in as a named additional build context so nothing
-# outside manifeel/ needs its own .dockerignore:
+# Build context is manifeel/ itself; diffusion_policy/ and maniflow/ (separate sibling
+# checkouts, not part of this repo) are passed in as named additional build contexts so
+# nothing outside manifeel/ needs its own .dockerignore:
 #   cd /home/aist/hisham/contact_rich_sim/manifeel
 #   docker build -f docker/Dockerfile \
 #     --build-context diffusion_policy=../diffusion_policy \
+#     --build-context maniflow=../maniflow \
 #     -t manifeel-isaaclab .
 
 ARG BASE_IMAGE=isaac-lab-base:latest
@@ -40,20 +41,25 @@ RUN mkdir -p /isaac-sim/exts/isaacsim.pip.nv/pip_prebundle/nvidia/cuda_nvrtc/lib
 USER isaaclab
 ENV UV_CACHE_DIR=/tmp/uv-cache
 
-# manifeel/diffusion_policy's own setup.py dependency lists are looser than the
-# versions pinned below (resolved against the conda env that was proven to coexist
-# with Isaac Lab's deps) -- --no-deps on both editable installs keeps pip from
-# re-resolving and clobbering that pinned set.
+# This whole list is a pinned set already verified to coexist with Isaac Lab's deps
+# (including torch itself, which comes from the base image and isn't listed here) --
+# --no-deps so uv doesn't re-resolve against individual packages' own metadata.
+# Concretely: timm==1.0.11 declares an exact torch==2.12.0 dependency, which pulls in
+# triton==3.7.0, conflicting with the triton==3.6.0 pinned below -- without --no-deps
+# that contradiction fails the whole install, even though every real runtime dependency
+# timm needs (pyyaml, huggingface-hub, safetensors, numpy) is already satisfied by
+# either this file or the base image.
 COPY --chown=isaaclab:isaaclab docker/requirements-extra.txt /tmp/requirements-extra.txt
 RUN --mount=type=cache,target=/tmp/uv-cache,uid=1000,gid=1000 \
-    uv pip install -r /tmp/requirements-extra.txt && \
+    uv pip install --no-deps -r /tmp/requirements-extra.txt && \
     rm /tmp/requirements-extra.txt
 
 COPY --chown=isaaclab:isaaclab . /workspace/manifeel/
 COPY --chown=isaaclab:isaaclab --from=diffusion_policy . /workspace/diffusion_policy/
+COPY --chown=isaaclab:isaaclab --from=maniflow . /workspace/maniflow/
 
 RUN --mount=type=cache,target=/tmp/uv-cache,uid=1000,gid=1000 \
-    uv pip install --no-deps -e /workspace/manifeel -e /workspace/diffusion_policy
+    uv pip install --no-deps -e /workspace/manifeel -e /workspace/diffusion_policy -e /workspace/maniflow
 
 ENV OMNI_KIT_ACCEPT_EULA=YES
 ENV ACCEPT_EULA=Y
