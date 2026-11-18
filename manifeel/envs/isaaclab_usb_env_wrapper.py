@@ -21,9 +21,14 @@ Differences from the original wrapper, and why:
     dataset only); it's used purely for eval-time logging, so using the real reward
     is a strict improvement with no behavior to preserve.
 
-  - Only one vision key ('wrist') -- the original's multi-view render() concatenated
-    several camera feeds side by side ('client', tactile views, etc. -- this task
-    only has the wrist camera, so that logic is simplified rather than ported as-is.
+  - vision_obs_keys covers 'front' and 'tactile_force_field_right' (whichever the
+    caller's shape_meta asks for) -- not the full multi-view set the original's
+    render() concatenated side by side ('client', 'wrist_2', tactile RGB/depth, etc).
+    tactile_force_field_right is treated as a vision-shaped key (moveaxis to
+    channel-first) even though it's raw force data, not RGB -- matching how training
+    treats it (manifeel/model/dual_resnet_obs_encoder.py's DualResNetObsEncoder runs
+    it through its own ResNet-18 instance, same as 'front'). It skips the uint8/255
+    normalization step real cameras need (see _transform_obs_data below).
 
   - Builds observation_space/action_space from the OLD `gym` package's spaces, not
     gymnasium's: MultiStepWrapper's repeated_space()/repeated_box() do
@@ -64,20 +69,30 @@ class IsaacLabUsbEnvWrapper:
         self.envs = gymnasium.make(self.TASK_ID, cfg=env_cfg)
 
         # obtain task observation keys from the shape_meta (same derivation as the
-        # original wrapper)
+        # original wrapper), split into real cameras vs the force-field tactile key --
+        # both are shape_meta type 'rgb' (matching how training's DualResNetObsEncoder
+        # treats them), but only real cameras are uint8 images needing /255 (see
+        # _transform_obs_data) or make sense to include in render()'s video preview.
         obs_shape_meta = shape_meta["obs"]
-        rgb_keys = []
+        camera_keys = []
+        force_field_keys = []
         lowdim_keys = []
         for key, attr in obs_shape_meta.items():
             obs_type = attr.get("type", "low_dim")
             if obs_type == "rgb":
-                rgb_keys.append(key)
+                if "force_field" in key:
+                    force_field_keys.append(key)
+                else:
+                    camera_keys.append(key)
             elif obs_type == "low_dim":
                 lowdim_keys.append(key)
-        self.task_obs_keys = rgb_keys + lowdim_keys
-        # Only one camera view for this task -- no multi-view side-by-side concat
-        # needed in render() the way the original's 'client'/tactile views did.
-        self.vision_obs_keys = rgb_keys
+        self.task_obs_keys = camera_keys + force_field_keys + lowdim_keys
+        self.camera_keys = camera_keys
+        self.force_field_keys = force_field_keys
+        # render() only visualizes real camera feeds -- tactile_force_field_right isn't
+        # photometric RGB (arbitrary-range force values), so including it there would
+        # produce a meaningless clipped image.
+        self.vision_obs_keys = camera_keys
 
     @property
     def num_envs(self) -> int:
@@ -98,6 +113,13 @@ class IsaacLabUsbEnvWrapper:
         spaces_dict = {}
         if "wrist" in self.task_obs_keys:
             spaces_dict["wrist"] = spaces.Box(low=0.0, high=1.0, shape=(3, 256, 256), dtype=np.float32)
+        if "front" in self.task_obs_keys:
+            spaces_dict["front"] = spaces.Box(low=0.0, high=1.0, shape=(3, 256, 256), dtype=np.float32)
+        if "tactile_force_field_right" in self.task_obs_keys:
+            # Raw normal/shear force values, not a [0,1]-bounded image -- unbounded box.
+            spaces_dict["tactile_force_field_right"] = spaces.Box(
+                low=np.float32(-np.inf), high=np.float32(np.inf), shape=(3, 10, 14), dtype=np.float32
+            )
         if "state" in self.task_obs_keys:
             spaces_dict["state"] = spaces.Box(
                 low=np.float32(-np.inf), high=np.float32(np.inf), shape=(7,), dtype=np.float32
@@ -156,12 +178,17 @@ class IsaacLabUsbEnvWrapper:
             if key not in obs:
                 continue
             value = obs[key].detach().cpu().numpy()
-            if key in self.vision_obs_keys:
+            if key in self.camera_keys:
                 # (num_envs, H, W, 3) uint8 -> (num_envs, 3, H, W) float32 [0, 1].
                 # The original pipeline normalizes at the task level
                 # (compute_observations_dict_obs); UsbInsertionEnv returns raw
                 # uint8 from the camera sensor, so this wrapper does it instead.
                 value = value.astype(np.float32) / 255.0
+                value = np.moveaxis(value, -1, 1)
+            elif key in self.force_field_keys:
+                # (num_envs, 10, 14, 3) raw normal/shear force values -- channel-last
+                # to channel-first only, no /255 (not image intensities).
+                value = value.astype(np.float32)
                 value = np.moveaxis(value, -1, 1)
             tf_obs[key] = value
         return tf_obs

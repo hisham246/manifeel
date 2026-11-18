@@ -54,6 +54,22 @@ class UsbInsertionEnv(AssemblyEnv):
         right_force = self.scene["right_finger_contact"].data.net_normal_forces_w.torch.squeeze(1)
         obs["contact_force"] = torch.cat([left_force, right_force], dim=-1)
 
+        # World-fixed front camera, matching manifeel's diffusion_policy/ManiFlow
+        # baseline's 'front' observation key exactly (see usb_assembly_env_cfg.py's
+        # front_camera for the pose/fov port from TacSLTaskUSB.yaml).
+        obs["front"] = self.scene["front_camera"].data.output["rgb"].torch
+
+        # Force-field tactile sensor on the right fingertip -> (num_envs, 10, 14, 3),
+        # channel order [normal, shear_x, shear_y] -- matches manifeel/tacsl/
+        # tacsl_env_insertion.py:110-114's torch.cat order exactly (not independently
+        # chosen), so this reproduces the same tactile_force_field_right the policy
+        # was trained on, not just a same-shaped substitute.
+        tactile_data = self.scene["right_tactile_sensor"].data
+        nrows, ncols = self.scene["right_tactile_sensor"].cfg.tactile_array_size
+        normal = tactile_data.tactile_normal_force.view(self.num_envs, nrows, ncols, 1)
+        shear = tactile_data.tactile_shear_force.view(self.num_envs, nrows, ncols, 2)
+        obs["tactile_force_field_right"] = torch.cat([normal, shear], dim=-1)
+
         return obs
 
     # ------------------------------------------------------------------

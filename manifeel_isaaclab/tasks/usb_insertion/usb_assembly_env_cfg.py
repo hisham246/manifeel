@@ -21,13 +21,15 @@ import isaaclab.sim as sim_utils
 from isaaclab.sensors import CameraCfg, ContactSensorCfg
 from isaaclab.utils import configclass
 
+from isaaclab_contrib.sensors.tacsl_sensor import VisuoTactileSensorCfg
 from isaaclab_tasks.contrib.automate.assembly_env_cfg import AssemblyEnvCfg, AssemblySceneCfg, CtrlCfg
 
 from .usb_assembly_tasks_cfg import UsbInsertion
 
 # Solve for the aperture that gives horizontal_fov=75deg at Isaac Lab's default focal_length
 # (FOV depends only on the aperture/focal_length ratio, so the absolute unit convention
-# doesn't matter as long as both numbers use the same one).
+# doesn't matter as long as both numbers use the same one). wrist and front share the same
+# fov/resolution in TacSLTaskUSB.yaml, so this is reused unchanged for both cameras.
 _FOCAL_LENGTH = 24.0
 _HORIZONTAL_FOV_DEG = 75.0
 _HORIZONTAL_APERTURE = 2 * _FOCAL_LENGTH * math.tan(math.radians(_HORIZONTAL_FOV_DEG) / 2)
@@ -71,6 +73,56 @@ class UsbAssemblySceneCfg(AssemblySceneCfg):
         update_period=0.0,
         history_length=1,
         filter_prim_paths_expr=["{ENV_REGEX_NS}/HeldAsset/Geometry/USB_plug/manifeel_usb_plug"],
+    )
+
+    # World-fixed (not robot-attached) camera, matching TacSLTaskUSB.yaml's "front"
+    # entry: is_body_camera=False, camera_pose=[[0.68, 0, 0.15], [-0.258819045,
+    # 1.58480958e-17, 0.965925826, 5.91458986e-17]]. The original IsaacGym code
+    # constructs the identical gymapi.Transform(Vec3(pos), Quat(quat)) for both body
+    # and non-body cameras (set_camera_transform vs attach_camera_to_body -- see
+    # tacsl_sensors.py:217-233), so the same "world" convention/forward-axis reasoning
+    # used for wrist_camera above applies here too -- not a separate derivation.
+    front_camera: CameraCfg = CameraCfg(
+        prim_path="{ENV_REGEX_NS}/front_camera",
+        offset=CameraCfg.OffsetCfg(
+            pos=(0.68, 0.0, 0.15),
+            rot=(-0.258819045, 1.58480958e-17, 0.965925826, 5.91458986e-17),  # xyzw
+            convention="world",
+        ),
+        width=256,
+        height=256,
+        data_types=["rgb"],
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=_FOCAL_LENGTH,
+            horizontal_aperture=_HORIZONTAL_APERTURE,
+            clipping_range=(0.01, 10.0),
+        ),
+    )
+
+    # Force-field tactile sensor on the right fingertip, via Isaac Lab's official TacSL
+    # port (isaaclab_contrib.sensors.tacsl_sensor) -- parameters below are a direct port
+    # of the original IsaacGym TacSL constants/config, not independently chosen:
+    #   tactile_kn=1.0 -> normal_contact_stiffness, tactile_mu=2.0 -> friction_coefficient,
+    #   tactile_kt=0.1 -> tangential_stiffness (manifeel-isaacgymenvs/isaacgymenvs/
+    #   tacsl_sensors/tacsl_sensors.py:374-377); tactile_array_size=(10,14) matches
+    #   TacSLTaskUSB.yaml's tactile_force_field_right shape [10,14,3]; tactile_margin
+    #   is tacsl_sensors.py's generate_tactile_points() default. enable_camera_tactile
+    #   is off since the trained policy only consumes the force field, not taxim
+    #   RGB/depth. prim_path assumes panda_rightfinger IS the elastomer body (no
+    #   separate elastomer sub-link exists on this project's Franka asset -- confirmed
+    #   by right_finger_contact above attaching directly to panda_rightfinger); adjust
+    #   if that turns out wrong.
+    right_tactile_sensor: VisuoTactileSensorCfg = VisuoTactileSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/panda_rightfinger/tactile_sensor",
+        enable_camera_tactile=False,
+        enable_force_field=True,
+        tactile_array_size=(10, 14),
+        tactile_margin=0.003,
+        normal_contact_stiffness=1.0,
+        friction_coefficient=2.0,
+        tangential_stiffness=0.1,
+        contact_object_prim_path_expr="{ENV_REGEX_NS}/HeldAsset/Geometry/USB_plug/manifeel_usb_plug",
+        camera_cfg=None,
     )
 
     def __post_init__(self):
