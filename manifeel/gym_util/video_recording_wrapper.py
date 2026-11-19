@@ -1,8 +1,8 @@
 import gym
 import numpy as np
 import pathlib
+import secrets
 from diffusion_policy.real_world.video_recorder import VideoRecorder
-import wandb.sdk.data_types.video as wv
 
 class VideoRecordingWrapper(gym.Wrapper):
     def __init__(self, 
@@ -49,9 +49,12 @@ class VideoRecordingWrapper(gym.Wrapper):
         obs = super().reset(**kwargs)
 
         # create filepaths
+        # wandb.sdk.data_types.video.util.generate_id() no longer exists in the pinned
+        # wandb version here ("module 'wandb.util' has no attribute 'generate_id'") --
+        # this only ever needed a short unique filename, not anything wandb-specific.
         self.file_paths = [
             pathlib.Path(self.output_dir).joinpath(
-                'media', wv.util.generate_id() + ".mp4")
+                'media', secrets.token_hex(4) + ".mp4")
             if use_recorder else None
             for use_recorder in self.record_mask
         ]

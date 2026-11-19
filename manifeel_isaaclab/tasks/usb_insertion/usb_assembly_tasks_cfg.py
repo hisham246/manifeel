@@ -27,13 +27,27 @@ from isaaclab.utils import configclass
 
 from isaaclab_tasks.contrib.automate.assembly_tasks_cfg import AssemblyTask, FixedAssetCfg, HeldAssetCfg
 
+import pathlib
+
+# Both dirs were previously hardcoded to this machine's host filesystem path (not
+# __file__-relative), which only ever worked when this task was run directly on the
+# host -- inside the manifeel-isaaclab Docker container the repo is bind-mounted at
+# /workspace/manifeel, not /home/aist/..., so that path doesn't exist there. Never
+# caught earlier because training (train_maniflow_usb_workspace.py) never touches the
+# simulator at all -- this only surfaced when actually rolling out a policy in Isaac
+# Lab for the first time. _REPO_ROOT resolves correctly regardless of mount point.
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
+
 # Converted via: scripts/tools/convert_urdf.py <manifeel-isaacgymenvs urdf> <this dir>/<name>.usd
-USB_USD_DIR = "/home/aist/hisham/contact_rich_sim/manifeel/assets/industreal/usd"
+USB_USD_DIR = str(_REPO_ROOT / "assets" / "industreal" / "usd")
 
 # Real OBJ meshes (same geometry the USD conversion came from) -- used by AssemblyEnv.__init__
 # for gripper_open_width (bounding-box-based) and the warp SDF mesh load. Pointing these at our
 # actual assets makes that code path correct, not stubbed, even though we don't use the SDF reward.
-USB_MESH_DIR = "/home/aist/hisham/contact_rich_sim/manifeel-isaacgymenvs/assets/industreal/mesh/TVB_mesh/"
+# Copied into manifeel/assets/ directly (from the separate manifeel-isaacgymenvs sibling repo,
+# which isn't mounted into the Docker image/container at all) so this task is self-contained
+# within the manifeel repo -- no second repo needs to be present wherever this runs.
+USB_MESH_DIR = str(_REPO_ROOT / "assets" / "industreal" / "mesh" / "TVB_mesh") + "/"
 
 
 @configclass

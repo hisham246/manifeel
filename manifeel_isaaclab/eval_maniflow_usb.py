@@ -30,7 +30,6 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--checkpoint", required=True, help="Path to a .ckpt file, e.g. latest_epoch1050.ckpt")
 parser.add_argument("--output_dir", required=True)
 parser.add_argument("--num_envs", type=int, default=1)
-parser.add_argument("--device", default="cuda:0")
 parser.add_argument("--max_steps", type=int, default=200)
 parser.add_argument("--test_seed", type=int, default=10000)
 add_launcher_args(parser)
@@ -72,7 +71,12 @@ with launch_simulation(env_cfg, args_cli):
     output_dir = args_cli.output_dir
     pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    hydra.initialize(config_path=str(pathlib.Path(__file__).parent.parent.joinpath(
+    # hydra.initialize() requires config_path relative to the caller's own file (it
+    # resolves via stack introspection) and rejects an absolute path outright -- ported
+    # this from eval.py's identical call, which has the same latent bug (never actually
+    # exercised there, since IsaacGym-based eval.py can't import on this GPU at all).
+    # hydra.initialize_config_dir() is the correct API for an absolute directory.
+    hydra.initialize_config_dir(config_dir=str(pathlib.Path(__file__).parent.parent.joinpath(
         "manifeel", "config")), version_base=None)
     cfg = hydra.compose(config_name="train_maniflow_usb.yaml")
 
@@ -123,6 +127,8 @@ with launch_simulation(env_cfg, args_cli):
             json_log[key] = value._path
         elif isinstance(value, np.integer):
             json_log[key] = int(value)
+        elif isinstance(value, np.floating):
+            json_log[key] = float(value)
         else:
             json_log[key] = value
     out_path = os.path.join(output_dir, "eval_log.json")
